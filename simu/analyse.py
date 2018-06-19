@@ -38,7 +38,7 @@ def peak_detect(x):
     return maxi
 
 ## Return the indices of the n largest values in x
-def keep_nlargest(x, n):
+def nlargest(x, n):
     idx = np.argsort(x)
     return idx[-n:]
 
@@ -48,6 +48,20 @@ def zero_but(x, idx):
     y[idx] = x[idx]
     return y
 
+## Return indices of the n largest peaks
+def nlargest_peak(x, n):
+    idx = peak_detect(x)
+    y = zero_but(x, idx)
+    return nlargest(y, n)
+
+## Generate signal
+def gen(idx):
+    print(idx, freq[idx], fft[idx])
+    x = zero_but(afft, idx)
+    plt.plot(freq, x)
+    cfft = zero_but(fft, idx)
+    return np.fft.irfft(cfft, len(data))
+
 print(fft.shape)
 print(fft.dtype)
 
@@ -55,25 +69,22 @@ freq = np.fft.rfftfreq(len(data), 1. / rate)
 afft = np.abs(fft)
 plt.plot(freq, afft)
 
-idx = peak_detect(afft)
-afft = zero_but(afft, idx)
-plt.plot(freq, afft)
-print(idx.shape)
+keep = 32
 
-keep = 10000
-idx = keep_nlargest(afft, keep)
-afft = zero_but(afft, idx)
-plt.plot(freq, afft)
+## Generate signal keeping the largest peaks
+idx = nlargest_peak(afft, keep)
+sig = gen(idx)
+scipy.io.wavfile.write('lp%d.wav'%keep, rate, sig)
 
-print(idx, freq[idx], fft[idx])
-cfft = zero_but(fft, idx)
+## Generate signal keeping the largest frequencies
+idx = nlargest(afft, keep)
+sig = gen(idx)
+scipy.io.wavfile.write('lf%d.wav'%keep, rate, sig)
 
 #plt.plot(freq, np.flipud(np.abs(fft[idx])))
 #plt.plot(freq, np.abs(cfft))
 
 #sig = np.fft.irfft(cfft[idx], len(data))
-sig = np.fft.irfft(cfft, len(data))
-scipy.io.wavfile.write('sig.wav', rate, sig)
 
 plt.show()
 
