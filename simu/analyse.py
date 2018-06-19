@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import scipy.fftpack
 import scipy.signal
 
-rate, data = scipy.io.wavfile.read('../snds/sample1.wav', )
+rate, data = scipy.io.wavfile.read('../snds/sample1.wav')
 assert(rate==44100)
 assert(len(data.shape) == 1)
 
@@ -166,7 +166,7 @@ plt.plot(fenv)
 
 idx = decim * np.arange(int(len(data)/ decim))
 xenv = fenv[idx]
-scipy.io.wavfile.write('xenv.wav', rate, xenv)
+scipy.io.wavfile.write('xenv.wav', erate, xenv)
 
 plt.plot(idx, xenv)
 plt.show()
