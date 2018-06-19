@@ -4,6 +4,7 @@ import numpy as np
 import scipy.io.wavfile
 import matplotlib.pyplot as plt
 import scipy.fftpack
+import scipy.signal
 
 rate, data = scipy.io.wavfile.read('../snds/sample1.wav', )
 assert(rate==44100)
@@ -54,9 +55,16 @@ def nlargest_peak(x, n):
     y = zero_but(x, idx)
     return nlargest(y, n)
 
+## Return the indices of the peaks above the median
+def peak_above_median(x):
+    m = np.amax(x)
+    idx = peak_detect(x)
+    peak = zero_but(x, idx)
+    return np.where(peak > (m / 2.))[0]
+
 ## Generate signal
 def gen(idx):
-    print(idx, freq[idx], fft[idx])
+    print(idx, freq[idx], afft[idx])
     x = zero_but(afft, idx)
     plt.plot(freq, x)
     cfft = zero_but(fft, idx)
@@ -69,7 +77,7 @@ freq = np.fft.rfftfreq(len(data), 1. / rate)
 afft = np.abs(fft)
 plt.plot(freq, afft)
 
-keep = 32
+keep = 2
 
 ## Generate signal keeping the largest peaks
 idx = nlargest_peak(afft, keep)
@@ -81,10 +89,84 @@ idx = nlargest(afft, keep)
 sig = gen(idx)
 scipy.io.wavfile.write('lf%d.wav'%keep, rate, sig)
 
-#plt.plot(freq, np.flipud(np.abs(fft[idx])))
-#plt.plot(freq, np.abs(cfft))
+keep = 4
+
+## Generate signal keeping the largest peaks
+idx = nlargest_peak(afft, keep)
+sig = gen(idx)
+scipy.io.wavfile.write('lp%d.wav'%keep, rate, sig)
+
+## Generate signal keeping the largest frequencies
+idx = nlargest(afft, keep)
+sig = gen(idx)
+scipy.io.wavfile.write('lf%d.wav'%keep, rate, sig)
+
+## Keep pure tones above median
+idx = peak_above_median(afft)
+sig = gen(idx)
+scipy.io.wavfile.write('med.wav', rate, sig)
+
+def hilbert_enveloppe(x):
+    #env = np.abs(scipy.signal.hilbert(data, N=len(data) / 10))
+    #env = np.abs(scipy.signal.hilbert(data, N=10*len(data)))
+    ## Find fundamuntal freq
+    #idx = nlargest_peak(afft, 1)[0]
+    ## Filter LP at 1.5 fundamental
+    #ffilt = 1.5 * freq[idx]
+    #b, a = scipy.signal.butter(10, 2 * ffilt / rate, btype='lowpass')
+    #x = scipy.signal.lfilter(b, a, data)
+    #scipy.io.wavfile.write('filt.wav', rate, x)
+    #print(ffilt)
+    return np.abs(scipy.signal.hilbert(x))
+
+def peak_enveloppe(x, plot=False):
+    adata = np.abs(x)
+    idx = peak_detect(adata)
+    x = np.arange(len(x))
+    y = adata[idx]
+    i = np.interp(x, idx, y)
+    if plot:
+        plt.figure()
+        plt.plot(idx, y)
+        plt.plot(i)
+        plt.plot(adata)
+        plt.show()
+    return i
+
+## Apply lowpass filter to w, 0 < f < 1, where 1 is nyquist freq (rate / 2)
+def lowpass(x, f):
+    #b, a = scipy.signal.butter(10, f, btype='lowpass')
+    #return scipy.signal.filtfilt(b, a, x)
+    b = scipy.signal.firwin(200, f)
+    a = 1.
+    return scipy.signal.lfilter(b, a, x)
 
 #sig = np.fft.irfft(cfft[idx], len(data))
 
 plt.show()
 
+plt.figure()
+
+if True:
+    env = peak_enveloppe(data)
+else:
+    env = hilbert_enveloppe(data)
+scipy.io.wavfile.write('env.wav', rate, env)
+plt.plot(env)
+
+## Downsample the enveloppe
+#x = scipy.signal.decimate(env, int(rate / erate))
+erate = 210
+decim = int(round(rate / erate))
+#erate = int(round(rate / decim))
+print(erate, decim)
+fenv = lowpass(env, erate / rate)
+scipy.io.wavfile.write('fenv.wav', rate, fenv)
+plt.plot(fenv)
+
+idx = decim * np.arange(int(len(data)/ decim))
+xenv = fenv[idx]
+scipy.io.wavfile.write('xenv.wav', rate, xenv)
+
+plt.plot(idx, xenv)
+plt.show()
