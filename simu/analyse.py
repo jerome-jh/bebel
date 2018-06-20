@@ -55,12 +55,12 @@ def nlargest_peak(x, n):
     y = zero_but(x, idx)
     return nlargest(y, n)
 
-## Return the indices of the peaks above the median
-def peak_above_median(x):
+## Return the indices of the peaks above given percentage of the max
+def peak_above(x, p):
     m = np.amax(x)
     idx = peak_detect(x)
     peak = zero_but(x, idx)
-    return np.where(peak > (m / 2.))[0]
+    return np.where(peak > (m * p))[0]
 
 ## Generate signal
 def gen(idx):
@@ -77,34 +77,26 @@ freq = np.fft.rfftfreq(len(data), 1. / rate)
 afft = np.abs(fft)
 plt.plot(freq, afft)
 
-keep = 2
+keep = (8, 16, 32)
 
-## Generate signal keeping the largest peaks
-idx = nlargest_peak(afft, keep)
-sig = gen(idx)
-scipy.io.wavfile.write('lp%d.wav'%keep, rate, sig)
+for k in keep:
+    ## Generate signal keeping the largest peaks
+    idx = nlargest_peak(afft, k)
+    sig = gen(idx)
+    scipy.io.wavfile.write('lp%d.wav'%k, rate, sig)
 
-## Generate signal keeping the largest frequencies
-idx = nlargest(afft, keep)
-sig = gen(idx)
-scipy.io.wavfile.write('lf%d.wav'%keep, rate, sig)
+    ## Generate signal keeping the largest frequencies
+    idx = nlargest(afft, k)
+    sig = gen(idx)
+    scipy.io.wavfile.write('lf%d.wav'%k, rate, sig)
 
-keep = 4
+pct = (0.15, 0.125, 0.10, 0.075)
 
-## Generate signal keeping the largest peaks
-idx = nlargest_peak(afft, keep)
-sig = gen(idx)
-scipy.io.wavfile.write('lp%d.wav'%keep, rate, sig)
-
-## Generate signal keeping the largest frequencies
-idx = nlargest(afft, keep)
-sig = gen(idx)
-scipy.io.wavfile.write('lf%d.wav'%keep, rate, sig)
-
-## Keep pure tones above median
-idx = peak_above_median(afft)
-sig = gen(idx)
-scipy.io.wavfile.write('med.wav', rate, sig)
+for p in pct:
+    ## Keep pure tones above level
+    idx = peak_above(afft, p)
+    sig = gen(idx)
+    scipy.io.wavfile.write('pct%d.wav'%(100*p), rate, sig)
 
 def hilbert_enveloppe(x):
     #env = np.abs(scipy.signal.hilbert(data, N=len(data) / 10))

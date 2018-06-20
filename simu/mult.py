@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+import glob
 import numpy as np
 import scipy.io.wavfile
 import matplotlib.pyplot as plt
@@ -33,10 +34,14 @@ def mult(ifile, ofile, env):
     x = e * data
     scipy.io.wavfile.write(ofile, rate, norm(x))
 
-mult('lf2.wav', 'elf2.wav', ienv)
-mult('lf4.wav', 'elf4.wav', ienv)
-mult('lp2.wav', 'elp2.wav', ienv)
-mult('lp4.wav', 'elp4.wav', ienv)
-mult('med.wav', 'emed.wav', ienv)
+gl = ('lf*.wav', 'lp*.wav', 'pct*.wav')
+for g in gl:
+    for f in glob.glob(g):
+        mult(f, 'e' + f, ienv)
+
+rate, data = scipy.io.wavfile.read('../snds/sample1.wav')
+assert(rate==44100)
+assert(len(data.shape) == 1)
+scipy.io.wavfile.write('inf.wav', rate, norm(data))
 
 plt.show()
