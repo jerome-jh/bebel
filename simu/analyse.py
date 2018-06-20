@@ -103,11 +103,21 @@ def nlargest_peak(x, n):
     return nlargest(y, n)
 
 ## Return the indices of the peaks above given percentage of the max
-def peak_above(x, p):
+def peak_above(x, p, plot=False):
     m = np.amax(x)
     idx = peak_detect(x)
     peak = zero_but(x, idx)
-    return np.where(peak > (m * p))[0]
+    idx = np.where(peak > (m * p))[0]
+    if plot:
+        plt.figure()
+        plt.plot(x, label='x')
+        plt.plot(peak, label='peak')
+        plt.hlines(m, 0, len(x), label='max')
+        plt.hlines(m * p, 0, len(x), label='threshold')
+        plt.vlines(idx, np.amin(x), m, label='above')
+        plt.legend()
+        plt.title('peak_above')
+    return idx
 
 ## Compute enveloppe with hilbert transform
 def hilbert_enveloppe(x):
@@ -162,6 +172,7 @@ if __name__ == '__main__':
     afft = np.abs(fft)
     
     keep = (8, 16, 32)
+    keep = ()
     
     for k in keep:
         ## Generate signal keeping the largest peaks
@@ -175,6 +186,7 @@ if __name__ == '__main__':
         scipy.io.wavfile.write('lf%d.wav'%k, rate, sig)
 
     pct = (0.15, 0.125, 0.10, 0.075)
+    pct = ()
     
     for p in pct:
         ## Keep pure tones above level
@@ -199,9 +211,9 @@ if __name__ == '__main__':
     fenv = lowpass(env, erate / rate)
     scipy.io.wavfile.write('fenv.wav', rate, fenv)
     
-    idx = decim * np.arange(int(len(data)/ decim))
-    xenv = fenv[idx]
-    scipy.io.wavfile.write('xenv.wav', erate, xenv)
+    xenv = decim * np.arange(int(len(data)/ decim))
+    yenv = fenv[xenv]
+    scipy.io.wavfile.write('yenv.wav', erate, yenv)
     
     plt.figure()
     plt.plot(freq, afft, label='fft mag')
@@ -210,12 +222,21 @@ if __name__ == '__main__':
     plt.figure()
     plt.plot(env, label='enveloppe')
     plt.plot(fenv, label='enveloppe LP')
-    plt.plot(idx, xenv, label='enveloppe interp')
+    plt.plot(xenv, yenv, label='enveloppe interp')
     plt.legend()
 
     twn, wn = locate_white_noise(data, rate)
     print(twn)
     print(wn)
 
+    pct = 15. / 100
+    dif = diff_pos(fenv)
+    idx = peak_above(dif, pct)
+    print(idx)
+    plt.figure()
+    plt.plot(fenv, label='enveloppe LP')
+    plt.plot(dif, label='enveloppe dif')
+    plt.hlines(pct * np.amax(dif), 0, len(dif), label='enveloppe dif')
+    plt.vlines(idx, 0, np.amax([np.amax(dif), np.amax(fenv)]))
     plt.show()
 
