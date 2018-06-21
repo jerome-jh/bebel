@@ -146,6 +146,21 @@ def lowpass(x, f):
     a = 1.
     return scipy.signal.lfilter(b, a, x)
 
+## From wikipedia https://en.wikipedia.org/wiki/Linear_congruential_generator
+def lcg(modulus, a, c, seed):
+    while True:
+        seed = (a * seed + c) % modulus
+        yield seed
+
+def prng():
+    yield lcg(2**32, 1664525, 1013904223, 0x4A65726F) 
+
+def aprng(n):
+    a = np.ndarray((n,), dtype='i4')
+    for i in range(n):
+        a[i] = prng()
+    return a / (2**32 - 1)
+
 ## Generate signal
 def gen(idx, plot=False):
     print(idx, freq[idx], afft[idx])
@@ -238,5 +253,18 @@ if __name__ == '__main__':
     plt.plot(dif, label='enveloppe dif')
     plt.hlines(pct * np.amax(dif), 0, len(dif), label='enveloppe dif')
     plt.vlines(idx, 0, np.amax([np.amax(dif), np.amax(fenv)]))
+
+    wn = np.zeros(dif.shape, dtype='b')
+    wn[idx] = True
+    white_noise_dur = 1e-3
+    white_noise_samples = int(round(rate * white_noise_dur))
+    hold = np.ones((white_noise_samples,), dtype='b')
+    wn = np.convolve(wn, hold, mode='same') > 0
+    
+    noise = aprng(len(dif))
+    wn = wn * noise
+
+    plt.plot(wn)
+
     plt.show()
 
