@@ -148,18 +148,19 @@ def lowpass(x, f):
 
 ## From wikipedia https://en.wikipedia.org/wiki/Linear_congruential_generator
 def lcg(modulus, a, c, seed):
-    while True:
-        seed = (a * seed + c) % modulus
-        yield seed
+    return (a * seed + c) % modulus
 
+prng_seed = 0x4A65726F
 def prng():
-    yield lcg(2**32, 1664525, 1013904223, 0x4A65726F) 
+    global prng_seed
+    prng_seed = lcg(2**32, 1664525, 1013904223, prng_seed) 
+    return prng_seed
 
 def aprng(n):
-    a = np.ndarray((n,), dtype='i4')
+    a = np.ndarray((n,), dtype='u4')
     for i in range(n):
         a[i] = prng()
-    return a / (2**32 - 1)
+    return np.asarray(a / 2**31 - 1, dtype='f4')
 
 ## Generate signal
 def gen(idx, plot=False):
@@ -186,8 +187,7 @@ if __name__ == '__main__':
     freq = np.fft.rfftfreq(len(data), 1. / rate)
     afft = np.abs(fft)
     
-    keep = (8, 16, 32)
-    keep = ()
+    keep = (16, 32)
     
     for k in keep:
         ## Generate signal keeping the largest peaks
@@ -247,24 +247,30 @@ if __name__ == '__main__':
     pct = 15. / 100
     dif = diff_pos(fenv)
     idx = peak_above(dif, pct)
-    print(idx)
     plt.figure()
     plt.plot(fenv, label='enveloppe LP')
     plt.plot(dif, label='enveloppe dif')
     plt.hlines(pct * np.amax(dif), 0, len(dif), label='enveloppe dif')
     plt.vlines(idx, 0, np.amax([np.amax(dif), np.amax(fenv)]))
+    plt.legend()
 
-    wn = np.zeros(dif.shape, dtype='b')
-    wn[idx] = True
+    ## Generate white noise around points of detection
     white_noise_dur = 1e-3
     white_noise_samples = int(round(rate * white_noise_dur))
+    wnb = np.zeros(data.shape, dtype='b')
+    wnb[idx] = True
     hold = np.ones((white_noise_samples,), dtype='b')
-    wn = np.convolve(wn, hold, mode='same') > 0
-    
-    noise = aprng(len(dif))
-    wn = wn * noise
+    wnb = np.convolve(wnb, hold, mode='same') > 0
+    noise = aprng(len(data))
+    noise = wnb * noise 
+    print(noise.dtype)
+    scipy.io.wavfile.write('noise.wav', rate, noise)
 
-    plt.plot(wn)
+    plt.figure()
+    plt.plot(data, label='data')
+    plt.plot(wnb, label='white noise detect')
+    plt.plot(noise, label='white noise gen')
+    plt.legend()
 
     plt.show()
 
