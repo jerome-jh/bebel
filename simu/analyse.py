@@ -1,5 +1,19 @@
 #!/usr/bin/python3
 
+##
+## This script is for decomposing an audio sample in components, that can be used
+## to synthetize an artificial version of the sample with very low CPU usage
+## The components are:
+## - tone: pure frequencies with largest amplitude are extracted
+## - modulation: the enveloppe of the sample is extracted
+## - percutions: regions of the signal with wideband noise are extracted
+##
+## For synthesis:
+## - the pure frequencies are synthesized
+## - they are multiplied with the enveloppe
+## - white noise is inserted to recreation wideband signals
+##
+
 import numpy as np
 import scipy.io.wavfile
 import matplotlib.pyplot as plt
@@ -139,12 +153,13 @@ def peak_enveloppe(x, plot=False):
     return i
 
 ## Apply lowpass filter to w, 0 < f < 1, where 1 is nyquist freq (rate / 2)
-def lowpass(x, f):
+def lowpass(x, f, order=200):
     #b, a = scipy.signal.butter(10, f, btype='lowpass')
     #return scipy.signal.filtfilt(b, a, x)
-    b = scipy.signal.firwin(200, f)
+    b = scipy.signal.firwin(order, f)
     a = 1.
-    return scipy.signal.lfilter(b, a, x)
+    #return scipy.signal.lfilter(b, a, x)
+    return scipy.signal.filtfilt(b, a, x)
 
 ## From wikipedia https://en.wikipedia.org/wiki/Linear_congruential_generator
 def lcg(modulus, a, c, seed):
@@ -174,33 +189,39 @@ def gen(idx, plot=False):
     return np.fft.irfft(cfft, len(data))
 
 if __name__ == '__main__':
+    ## Read input sample
     rate, data = scipy.io.wavfile.read('../snds/sample1.wav')
     assert(rate==44100)
     assert(len(data.shape) == 1)
-    
+    ## Fit input data to [-1, 1]
     scale = 1. / 2**(16 - 1)
     data = data * scale
+    ## Take the FFT
     fft = np.fft.rfft(data)
-    print(fft.shape)
-    print(fft.dtype)
-
     freq = np.fft.rfftfreq(len(data), 1. / rate)
+    print(freq)
     afft = np.abs(fft)
+    ## Take a moving average to merge peaks that are close together
+    freq_sep = 50 ## in Hz
+    freq_cut = freq[1] / freq_sep
+    safft = lowpass(afft, 2 * freq_cut, order=500)
     
-    keep = (16, 32)
+    keep = (8, 16, 32, 64)
     
     for k in keep:
         ## Generate signal keeping the largest peaks
-        idx = nlargest_peak(afft, k)
+        idx = nlargest_peak(safft, k)
         sig = gen(idx)
         scipy.io.wavfile.write('lp%d.wav'%k, rate, sig)
-    
-        ## Generate signal keeping the largest frequencies
-        idx = nlargest(afft, k)
-        sig = gen(idx)
-        scipy.io.wavfile.write('lf%d.wav'%k, rate, sig)
 
-    pct = (0.15, 0.125, 0.10, 0.075)
+        plt.figure()
+        plt.plot(freq, afft, label='fft mag %d'%k)
+        plt.plot(freq, safft, label='smoothed fft mag %d'%k)
+        plt.vlines(freq[idx], 0, np.amax(afft))
+        plt.legend()
+
+    
+    #pct = (0.15, 0.125, 0.10, 0.075)
     pct = ()
     
     for p in pct:
@@ -230,10 +251,6 @@ if __name__ == '__main__':
     yenv = fenv[xenv]
     scipy.io.wavfile.write('yenv.wav', erate, yenv)
     
-    plt.figure()
-    plt.plot(freq, afft, label='fft mag')
-    plt.legend()
-
     plt.figure()
     plt.plot(env, label='enveloppe')
     plt.plot(fenv, label='enveloppe LP')
