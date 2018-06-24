@@ -9,29 +9,44 @@
 ## - percutions: regions of the signal with wideband noise are extracted
 ##
 ## For synthesis:
-## - the pure frequencies are synthesized
+## - the pure frequencies are synthesized with zero phase
 ## - they are multiplied with the enveloppe
-## - white noise is inserted to recreation wideband signals
+## - white noise is inserted or mixed in to recreation wideband signals
+##
+## Notes on the algos in this file:
+## - tone extraction:
+## we want to extract the frequencies with largest amplitude. However large peaks
+## can be quite close, and keeping two close frequencies will cause beating during
+## synthesis. It also does not enrich the sound to the hear that prefers harmonic
+## frequencies.
+## The algo finally retained is to do a first pass of peak detection on the FFT
+## magnitude, linearly interpolate between the peaks, then do a second pass of
+## peak detection, then take the nth largest. This will merge nearby peaks, while
+## the largest peak of the group will keep its frequency and amplitude. Also lone
+## peaks keep the same frequency and amplitude.
+##
+## - enveloppe extraction:
+## we can use the Hilbert transform or a peak detection on the temporal signal.
+## After low-pass filtering the result is exactly the same. The enveloppe is then
+## downsampled to a few hundreds of Hertz
+##
+## - percusion noise detection:
+## attempts have been made using the SNR of the tone but that was not reliable.
+## Finally we take the first derivative of the amplitude and mix white noise where
+## it peaks. That works very well for my samples but may not be always the case.
+##
+## Final remark: 
+## The algo works well on the sample I tried it on. On other samples, it may
+## require small or large adjustments.
 ##
 
 import numpy as np
 import scipy.io.wavfile
 import matplotlib.pyplot as plt
-import scipy.fftpack
 import scipy.signal
 
-#fft = scipy.fftpack.rfft(data)
-#n = len(data)
-#sig = np.fft.irfft(fft, n)
-#sig = scipy.fftpack.irfft(fft)
-#print(fft.dtype)
-#print(sig.dtype)
-#sig = np.asarray(sig, dtype='f4')
-#print(sig.dtype)
-#scipy.io.wavfile.write('sig.wav', rate, sig)
-#quit()
-
 ## Return the indices of peaks in x
+## Can also return the valleys
 def peak_detect(x, valley=False):
     dx = np.ndarray((len(x) + 1,), dtype=x.dtype)
     dx[0] = x[1] - 0
@@ -42,55 +57,9 @@ def peak_detect(x, valley=False):
         pat = np.flipud(np.array([1, -1]))
     else:
         pat = np.flipud(np.array([-1, 1]))
-    print(pat.dtype)
-    print(sign.dtype)
     conv = np.convolve(sign, pat, mode='valid')
     maxi = np.where(conv == 2)[0]
     return maxi
-
-## Return true if spectrum mean is higher than a percentage of the max
-def is_white_noise(spct, pct, t):
-    #afft = np.abs(fft)
-    #if False:
-    #    afft = np.square(afft)
-    if False:
-        ## Take the square for energy
-        nrj = np.square(spct)
-        mean = np.mean(nrj, axis=0)
-        maxi = np.amax(nrj, axis=0)
-    else:
-        mean = np.mean(spct, axis=0)
-        maxi = np.amax(spct, axis=0)
-    wn = mean > (pct * maxi / 100)
-    if True:
-        snr = maxi / mean
-        plt.figure()
-        plt.plot(snr, label='snr')
-        plt.plot(mean, label='mean')
-        plt.plot(maxi, label='maxi')
-        plt.plot(wn * np.mean(maxi), label='iswn')
-        plt.legend()
-    if False:
-        for i in range(10):
-            print(t[i])
-            plt.figure()
-            plt.plot(spct[:,i])
-            plt.hlines(mean[i], 0, spct.shape[0], label='mean')
-            plt.hlines(maxi[i], 0, spct.shape[0], label='maxi')
-            plt.legend()
-    return wn
-
-## Find regions where we can replace signal by white noise
-def locate_white_noise(sig, rate):
-    snr = 20
-    wind = 128
-    over = 2 * wind / 4
-    f, t, s = scipy.signal.spectrogram(sig, fs=rate, nperseg=wind, noverlap=over, detrend=False, scaling='spectrum', mode='magnitude')
-    print(s.shape)
-    print(f.shape)
-    print(t.shape)
-    wn = is_white_noise(s, snr, t)
-    return t, wn
 
 ## Compute differential x[n] - x[n-1], return same number of samples as x
 def diff_pos(x):
@@ -137,7 +106,8 @@ def peak_above(x, p, plot=False):
 def hilbert_enveloppe(x):
     return np.abs(scipy.signal.hilbert(x))
 
-# Compute enveloppe using peaks
+## Compute enveloppe using peaks
+## Take the peaks then linear interpolate between them
 def peak_enveloppe(x, plot=False):
     adata = np.abs(x)
     idx = peak_detect(adata)
@@ -165,25 +135,69 @@ def lowpass(x, f, order=200):
 def lcg(modulus, a, c, seed):
     return (a * seed + c) % modulus
 
+## Generate pseudo-random numbers given seed
 prng_seed = 0x4A65726F
 def prng():
     global prng_seed
     prng_seed = lcg(2**32, 1664525, 1013904223, prng_seed) 
     return prng_seed
 
+## Return an array of n [0, 2**32-1] pseudo random numbers
 def aprng(n):
     a = np.ndarray((n,), dtype='u4')
     for i in range(n):
         a[i] = prng()
     return np.asarray(a / 2**31 - 1, dtype='f4')
 
+## Return true if spectrum mean is higher than a percentage of the max
+## Currently unused
+def is_white_noise(spct, pct, t):
+    if False:
+        ## Take the square for energy
+        nrj = np.square(spct)
+        mean = np.mean(nrj, axis=0)
+        maxi = np.amax(nrj, axis=0)
+    else:
+        mean = np.mean(spct, axis=0)
+        maxi = np.amax(spct, axis=0)
+    wn = mean > (pct * maxi / 100)
+    if True:
+        snr = maxi / mean
+        plt.figure()
+        plt.plot(snr, label='snr')
+        plt.plot(mean, label='mean')
+        plt.plot(maxi, label='maxi')
+        plt.plot(wn * np.mean(maxi), label='iswn')
+        plt.legend()
+    if False:
+        for i in range(10):
+            print(t[i])
+            plt.figure()
+            plt.plot(spct[:,i])
+            plt.hlines(mean[i], 0, spct.shape[0], label='mean')
+            plt.hlines(maxi[i], 0, spct.shape[0], label='maxi')
+            plt.legend()
+    return wn
+
+## Find regions where we can replace signal by white noise
+## Currently unused
+def locate_white_noise(sig, rate):
+    snr = 20
+    wind = 128
+    over = 2 * wind / 4
+    f, t, s = scipy.signal.spectrogram(sig, fs=rate, nperseg=wind, noverlap=over, detrend=False, scaling='spectrum', mode='magnitude')
+    print(s.shape)
+    print(f.shape)
+    print(t.shape)
+    wn = is_white_noise(s, snr, t)
+    return t, wn
+
 ## Generate signal
 def gen(idx, plot=False):
-    print(idx, freq[idx], afft[idx])
     x = zero_but(afft, idx)
     if plot:
         plt.figure()
-        plt.plot(freq, x, label='timber spectrum')
+        plt.plot(freq, x, label='tone spectrum')
         plt.legend()
     cfft = zero_but(fft, idx)
     return np.fft.irfft(cfft, len(data))
@@ -192,46 +206,50 @@ if __name__ == '__main__':
     ## Read input sample
     rate, data = scipy.io.wavfile.read('../snds/sample1.wav')
     assert(rate==44100)
+    ## Want one channel wav
     assert(len(data.shape) == 1)
+    duration = len(data) / rate
+
+    ## File to output synthesis parameters
+    par = open('param.txt', mode='w')
+    print('duration =', duration, file=par)
+
     ## Fit input data to [-1, 1]
     scale = 1. / 2**(16 - 1)
     data = data * scale
     ## Take the FFT
     fft = np.fft.rfft(data)
     freq = np.fft.rfftfreq(len(data), 1. / rate)
-    print(freq)
     afft = np.abs(fft)
-    ## Take a moving average to merge peaks that are close together
-    freq_sep = 50 ## in Hz
-    freq_cut = freq[1] / freq_sep
-    safft = lowpass(afft, 2 * freq_cut, order=500)
-    
-    keep = (8, 16, 32, 64)
-    
+    if False:
+        ## LP filter to merge peaks that are close together
+        freq_sep = 50 ## in Hz
+        freq_cut = freq[1] / freq_sep
+        safft = lowpass(afft, 2 * freq_cut, order=500)
+    else:
+        ## Take the peaks twice to merge those that are close together
+        ## without affecting the lone ones
+        safft = peak_enveloppe(peak_enveloppe(afft))
+
+    ## Generate tone keeping the largest peaks
+    #keep = (4, 8, 16, 32, 64)
+    keep = (8,)
     for k in keep:
-        ## Generate signal keeping the largest peaks
         idx = nlargest_peak(safft, k)
+        ## Output a wav file with the inverse FFT of selected components
         sig = gen(idx)
         scipy.io.wavfile.write('lp%d.wav'%k, rate, sig)
+        ## Output synthesis parameters
+        print('mag =', tuple(afft[idx]), file=par)
+        print('freq =', tuple(freq[idx]), file=par)
+        if True:
+            plt.figure()
+            plt.plot(freq, afft, label='fft mag %d'%k)
+            plt.plot(freq, safft, label='smoothed fft mag %d'%k)
+            plt.vlines(freq[idx], 0, np.amax(afft))
+            plt.legend()
 
-        plt.figure()
-        plt.plot(freq, afft, label='fft mag %d'%k)
-        plt.plot(freq, safft, label='smoothed fft mag %d'%k)
-        plt.vlines(freq[idx], 0, np.amax(afft))
-        plt.legend()
-
-    
-    #pct = (0.15, 0.125, 0.10, 0.075)
-    pct = ()
-    
-    for p in pct:
-        ## Keep pure tones above level
-        idx = peak_above(afft, p)
-        sig = gen(idx)
-        scipy.io.wavfile.write('pct%d.wav'%(100*p), rate, sig)
-    
-    #sig = np.fft.irfft(cfft[idx], len(data))
-    
+    ## Take the enveloppe
     if True:
         env = peak_enveloppe(data)
     else:
@@ -243,13 +261,15 @@ if __name__ == '__main__':
     erate = 210
     decim = int(round(rate / erate))
     #erate = int(round(rate / decim))
-    print(erate, decim)
     fenv = lowpass(env, erate / rate)
     scipy.io.wavfile.write('fenv.wav', rate, fenv)
     
     xenv = decim * np.arange(int(len(data)/ decim))
     yenv = fenv[xenv]
     scipy.io.wavfile.write('yenv.wav', erate, yenv)
+
+    print('env_rate =', erate, file=par)
+    print('env_data =', tuple(yenv), file=par)
     
     plt.figure()
     plt.plot(env, label='enveloppe')
@@ -257,19 +277,23 @@ if __name__ == '__main__':
     plt.plot(xenv, yenv, label='enveloppe interp')
     plt.legend()
 
-    twn, wn = locate_white_noise(data, rate)
-    print(twn)
-    print(wn)
-
-    pct = 15. / 100
-    dif = diff_pos(fenv)
-    idx = peak_above(dif, pct)
-    plt.figure()
-    plt.plot(fenv, label='enveloppe LP')
-    plt.plot(dif, label='enveloppe dif')
-    plt.hlines(pct * np.amax(dif), 0, len(dif), label='enveloppe dif')
-    plt.vlines(idx, 0, np.amax([np.amax(dif), np.amax(fenv)]))
-    plt.legend()
+    ## Find where white noise should be inserted
+    if False: ## Do not just flick that to True, both paths do not create the same vars
+        twn, wn = locate_white_noise(data, rate)
+        print(twn)
+        print(wn)
+    else:
+        ## Take enveloppe first derivative
+        dif = diff_pos(fenv)
+        ## Look where peaks are high enough above mean
+        pct = 15. / 100
+        idx = peak_above(dif, pct)
+        plt.figure()
+        plt.plot(fenv, label='enveloppe LP')
+        plt.plot(dif, label='enveloppe dif')
+        plt.hlines(pct * np.amax(dif), 0, len(dif), label='enveloppe dif')
+        plt.vlines(idx, 0, np.amax([np.amax(dif), np.amax(fenv)]))
+        plt.legend()
 
     ## Generate white noise around points of detection
     white_noise_dur = 1e-3
@@ -280,14 +304,25 @@ if __name__ == '__main__':
     wnb = np.convolve(wnb, hold, mode='same') > 0
     noise = aprng(len(data))
     noise = wnb * noise 
-    print(noise.dtype)
     scipy.io.wavfile.write('noise.wav', rate, noise)
+
+    ## Cap at zero and duration
+    noise_beg_t = idx / rate - white_noise_dur
+    if noise_beg_t[0] < 0:
+        noise_beg_t[0] = 0
+    noise_end_t = idx / rate + white_noise_dur
+    if noise_end_t[-1] > duration:
+        noise_end_t[-1] = duration
+    print('noise_begin_t =', tuple(noise_beg_t), file=par)
+    print('noise_end_t =', tuple(noise_end_t), file=par)
 
     plt.figure()
     plt.plot(data, label='data')
     plt.plot(wnb, label='white noise detect')
     plt.plot(noise, label='white noise gen')
     plt.legend()
+
+    par.close()
 
     plt.show()
 
