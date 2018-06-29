@@ -142,7 +142,7 @@ def prng():
     prng_seed = lcg(2**32, 1664525, 1013904223, prng_seed) 
     return prng_seed
 
-## Return an array of n [0, 2**32-1] pseudo random numbers
+## Return an array of n [-1, 1] pseudo random numbers
 def aprng(n):
     a = np.ndarray((n,), dtype='u4')
     for i in range(n):
@@ -192,6 +192,10 @@ def locate_white_noise(sig, rate):
     wn = is_white_noise(s, snr, t)
     return t, wn
 
+## Normalize float array to [-1, 1]
+def norm(a):
+    return a / np.amax(a)
+
 ## Generate signal
 def gen(idx, plot=False):
     x = zero_but(afft, idx)
@@ -217,6 +221,7 @@ if __name__ == '__main__':
     ## Fit input data to [-1, 1]
     scale = 1. / 2**(16 - 1)
     data = data * scale
+    data = norm(data)
     ## Take the FFT
     fft = np.fft.rfft(data)
     freq = np.fft.rfftfreq(len(data), 1. / rate)
@@ -240,7 +245,7 @@ if __name__ == '__main__':
         sig = gen(idx)
         scipy.io.wavfile.write('lp%d.wav'%k, rate, sig)
         ## Output synthesis parameters
-        print('mag =', tuple(afft[idx]), file=par)
+        print('mag =', tuple(2 * np.sqrt(2) * afft[idx] / len(data)), file=par)
         print('freq =', tuple(freq[idx]), file=par)
         if True:
             plt.figure()
@@ -262,6 +267,9 @@ if __name__ == '__main__':
     decim = int(round(rate / erate))
     #erate = int(round(rate / decim))
     fenv = lowpass(env, erate / rate)
+    ## Normalize back the enveloppe to still be full-scale
+    ## This changes the relative levels compared to original data
+    #fenv = norm(fenv)
     scipy.io.wavfile.write('fenv.wav', rate, fenv)
     
     xenv = decim * np.arange(int(len(data)/ decim))
@@ -288,12 +296,6 @@ if __name__ == '__main__':
         ## Look where peaks are high enough above mean
         pct = 15. / 100
         idx = peak_above(dif, pct)
-        plt.figure()
-        plt.plot(fenv, label='enveloppe LP')
-        plt.plot(dif, label='enveloppe dif')
-        plt.hlines(pct * np.amax(dif), 0, len(dif), label='enveloppe dif')
-        plt.vlines(idx, 0, np.amax([np.amax(dif), np.amax(fenv)]))
-        plt.legend()
 
     ## Generate white noise around points of detection
     white_noise_dur = 1e-3
@@ -315,6 +317,19 @@ if __name__ == '__main__':
         noise_end_t[-1] = duration
     print('noise_begin_t =', tuple(noise_beg_t), file=par)
     print('noise_end_t =', tuple(noise_end_t), file=par)
+
+    ## Normalization factor to generate data full-scale
+    ## TODO
+    #print('norm =', 1 / np., file=par)
+
+    plt.figure()
+    plt.plot(fenv, label='enveloppe LP')
+    plt.plot(dif, label='enveloppe dif')
+    plt.hlines(pct * np.amax(dif), 0, len(dif), label='enveloppe dif')
+    plt.vlines(idx, 0, np.amax([np.amax(dif), np.amax(fenv)]))
+    plt.vlines(noise_beg_t * rate, 0, np.amax([np.amax(dif), np.amax(fenv)]))
+    plt.vlines(noise_end_t * rate, 0, np.amax([np.amax(dif), np.amax(fenv)]))
+    plt.legend()
 
     plt.figure()
     plt.plot(data, label='data')
