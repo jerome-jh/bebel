@@ -206,6 +206,33 @@ def gen(idx, plot=False):
     cfft = zero_but(fft, idx)
     return np.fft.irfft(cfft, len(data))
 
+def gen2(idx):
+    sig = np.zeros(data.shape, dtype='f4')
+    t = np.arange(len(data)) / rate
+    for i in idx:
+        z = fft[i]
+        f = freq[i]
+        p = 2 * np.pi * f * t
+        if i == 0 or i == len(fft) - 1:
+            sr = 1 / len(data)
+        else:
+            sr = 2 / len(data)
+        si = -2 / len(data)
+        sig = sig + sr * np.real(z) * np.cos(p)
+        sig = sig + si * np.imag(z) * np.sin(p)
+    return sig
+
+def gen3(idx):
+    sig = np.zeros(data.shape, dtype='f4')
+    t = np.arange(len(data)) / rate
+    for i in idx:
+        z = fft[i]
+        f = freq[i]
+        p = 2 * np.pi * f * t
+        m = 2 * np.abs(z) / len(data)
+        sig = sig + m * np.sin(p) 
+    return sig
+
 if __name__ == '__main__':
     ## Read input sample
     rate, data = scipy.io.wavfile.read('../snds/sample1.wav')
@@ -244,8 +271,12 @@ if __name__ == '__main__':
         ## Output a wav file with the inverse FFT of selected components
         sig = gen(idx)
         scipy.io.wavfile.write('lp%d.wav'%k, rate, sig)
+        sig = gen2(idx)
+        scipy.io.wavfile.write('lp%d2.wav'%k, rate, sig)
+        sig = gen3(idx)
+        scipy.io.wavfile.write('lp%d3.wav'%k, rate, sig)
         ## Output synthesis parameters
-        print('mag =', tuple(2 * np.sqrt(2) * afft[idx] / len(data)), file=par)
+        print('mag =', tuple(2 * afft[idx] / len(data)), file=par)
         print('freq =', tuple(freq[idx]), file=par)
         if True:
             plt.figure()
